@@ -1,1 +1,3 @@
-com\example\Main.class
+com\app\Main.class
+com\app\Location.class
+com\app\JsonResponse.class
