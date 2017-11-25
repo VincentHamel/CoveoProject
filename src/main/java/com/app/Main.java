@@ -3,6 +3,9 @@ package com.app;
 
 import com.zaxxer.hikari.HikariConfig;
 import com.zaxxer.hikari.HikariDataSource;
+import edu.cmu.sphinx.api.Configuration;
+import edu.cmu.sphinx.api.SpeechResult;
+import edu.cmu.sphinx.api.StreamSpeechRecognizer;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.SpringApplication;
@@ -13,9 +16,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 
 import javax.sql.DataSource;
 import java.io.*;
-import java.sql.Connection;
-import java.sql.SQLException;
-import java.sql.Statement;
+import java.sql.*;
 import java.util.*;
 
 import com.google.gson.Gson;
@@ -27,11 +28,15 @@ import org.springframework.web.bind.annotation.RequestParam;
 @SpringBootApplication
 public class Main {
 
-  private static final double DISTANCE_UPPER_LIMIT = 6000; //kilometers
   private static final String DB_PASSWORD = "password";
-  private static final double MINIMAL_SCORE = 0.4;
 
-  @Value("${spring.datasource.url}")
+  //config default values
+  private double m_DistanceUpperLimit = 6000; //kilometers
+  private double m_MinimalScore = 0.4;
+
+
+
+    @Value("${spring.datasource.url}")
   private String dbUrl;
 
   @Autowired
@@ -44,9 +49,60 @@ public class Main {
   }
 
     @RequestMapping("/")
-    String index() {
-        return "index";
-      }
+    public String index(Map<String, Object>model) {
+      model.put("first", "suggestion:name:latitude:longitude");
+      model.put("second", "db:password" );
+      model.put("third", "config:distance:minValue" );
+      return "index";
+    }
+
+    @RequestMapping("/voice")
+    public String voiceActived(@RequestParam Map<String,String> requestParams, Map<String, Object>model){
+
+        ClassLoader classLoader = this.getClass().getClassLoader();
+        InputStream stream = classLoader.getResourceAsStream("rawData/Voice/Amos.wav");
+        Configuration configuration = new Configuration();
+
+        configuration.setSampleRate(8000);
+        /*
+        TODO: Bug
+        Heroku, upon loading this application on their web services, stores the libraries in a location
+        unavaible to this application explicitly.
+        Yet, the sphinx voice recognition app requires the exact filepath to various file in order to work properly.
+
+        possible fix: use classLoader.getressourceAsStream(), write the stream on a file, use that file as filepath.
+        (memory intensive).
+         */
+
+        configuration.setAcousticModelPath(classLoader.getResource("Voice/enus").getPath());
+        configuration.setDictionaryPath(classLoader.getResource("Voice/cmudict-en-us.dict").getPath());
+        configuration.setLanguageModelPath(classLoader.getResource("Voice/enus.lm.bin").getPath());
+
+        StreamSpeechRecognizer recognizer = null;
+
+        try {
+            recognizer = new StreamSpeechRecognizer(configuration);
+        } catch (IOException e) {
+            model.put("message", "some message:");
+            return "error";
+        }
+
+        recognizer.startRecognition(stream);
+        SpeechResult result  = recognizer.getResult();
+        recognizer.stopRecognition();
+
+        model.put("voice", "some message:"+  result.getHypothesis());
+        return "voice";
+    }
+
+    @RequestMapping(value = "/config", method = RequestMethod.GET)
+    public String setConfig(@RequestParam Map<String,String> requestParams, Map<String, Object>model){
+        m_DistanceUpperLimit = Double.parseDouble(requestParams.get("DistanceUpperLimit"));
+        m_MinimalScore = Double.parseDouble(requestParams.get("MinimalScore"));
+
+        model.put("config", "config modified");
+        return "config";
+    }
 
     /*
     Initialize the database with the CountyCode, admin region and name of region for both CA and US.
@@ -58,91 +114,49 @@ public class Main {
         // but Heroku free version only allow one dyno.
         String password=requestParams.get("password");
 
-        if(password.equals(DB_PASSWORD)){
-            try (Connection connection = dataSource.getConnection()) {
-                Statement stmt = connection.createStatement();
-                stmt.executeUpdate("DROP TABLE CountyCode");
-                stmt.executeUpdate("CREATE TABLE IF NOT EXISTS CountyCode (Country VARCHAR(2) ," +
-                        "Admin VARCHAR(2)," +
-                        "Name VARCHAR(40))");
-
-                stmt.executeUpdate("INSERT INTO CountyCode VALUES ('CA','01', 'Alberta' )");
-                stmt.executeUpdate("INSERT INTO CountyCode VALUES ('CA','02', 'British Columbia' )");
-                stmt.executeUpdate("INSERT INTO CountyCode VALUES ('CA','03', 'Manitoba' )");
-                stmt.executeUpdate("INSERT INTO CountyCode VALUES ('CA','04', 'New Brunswick' )");
-                stmt.executeUpdate("INSERT INTO CountyCode VALUES ('CA','05', 'NewfoundLand and Labrador' )");
-                stmt.executeUpdate("INSERT INTO CountyCode VALUES ('CA','07', 'Nova Scotia' )");
-                stmt.executeUpdate("INSERT INTO CountyCode VALUES ('CA','08', 'Ontario' )");
-                stmt.executeUpdate("INSERT INTO CountyCode VALUES ('CA','09', 'Prince Edward Island' )");
-                stmt.executeUpdate("INSERT INTO CountyCode VALUES ('CA','10', 'Quebec' )");
-                stmt.executeUpdate("INSERT INTO CountyCode VALUES ('CA','11', 'Saskatchewan' )");
-                stmt.executeUpdate("INSERT INTO CountyCode VALUES ('CA','12', 'Yukon' )");
-                stmt.executeUpdate("INSERT INTO CountyCode VALUES ('CA','13', 'NW Territories' )");
-                stmt.executeUpdate("INSERT INTO CountyCode VALUES ('CA','14', 'Nunavut' )");
-                stmt.executeUpdate("INSERT INTO CountyCode VALUES ('US','AR', 'Arkansas' )");
-                stmt.executeUpdate("INSERT INTO CountyCode VALUES ('US','DC', 'Washington,D.C.' )");
-                stmt.executeUpdate("INSERT INTO CountyCode VALUES ('US','DE', 'Delaware' )");
-                stmt.executeUpdate("INSERT INTO CountyCode VALUES ('US','FL', 'Florida' )");
-                stmt.executeUpdate("INSERT INTO CountyCode VALUES ('US','GA', 'Georgia' )");
-                stmt.executeUpdate("INSERT INTO CountyCode VALUES ('US','KS', 'Kansas' )");
-                stmt.executeUpdate("INSERT INTO CountyCode VALUES ('US','LA', 'Louisiana' )");
-                stmt.executeUpdate("INSERT INTO CountyCode VALUES ('US','MD', 'Maryland' )");
-                stmt.executeUpdate("INSERT INTO CountyCode VALUES ('US','MO', 'Missouri' )");
-                stmt.executeUpdate("INSERT INTO CountyCode VALUES ('US','MS', 'Mississippi' )");
-                stmt.executeUpdate("INSERT INTO CountyCode VALUES ('US','NC', 'North Carolina' )");
-                stmt.executeUpdate("INSERT INTO CountyCode VALUES ('US','OK', 'Oklahoma' )");
-                stmt.executeUpdate("INSERT INTO CountyCode VALUES ('US','SC', 'South Carolina' )");
-                stmt.executeUpdate("INSERT INTO CountyCode VALUES ('US','TN', 'Tenesse' )");
-                stmt.executeUpdate("INSERT INTO CountyCode VALUES ('US','TX', 'Texas' )");
-                stmt.executeUpdate("INSERT INTO CountyCode VALUES ('US','WV', 'West Virginia' )");
-                stmt.executeUpdate("INSERT INTO CountyCode VALUES ('US','AL', 'Alabama' )");
-                stmt.executeUpdate("INSERT INTO CountyCode VALUES ('US','CT', 'Connecticut' )");
-                stmt.executeUpdate("INSERT INTO CountyCode VALUES ('US','IA', 'Iowa' )");
-                stmt.executeUpdate("INSERT INTO CountyCode VALUES ('US','IL', 'Illinois' )");
-                stmt.executeUpdate("INSERT INTO CountyCode VALUES ('US','IN', 'Indiana' )");
-                stmt.executeUpdate("INSERT INTO CountyCode VALUES ('US','ME', 'Maine' )");
-                stmt.executeUpdate("INSERT INTO CountyCode VALUES ('US','MI', 'Michigan' )");
-                stmt.executeUpdate("INSERT INTO CountyCode VALUES ('US','MN', 'Minnesota' )");
-                stmt.executeUpdate("INSERT INTO CountyCode VALUES ('US','NE', 'Nebraska' )");
-                stmt.executeUpdate("INSERT INTO CountyCode VALUES ('US','NH', 'New Hampshire' )");
-                stmt.executeUpdate("INSERT INTO CountyCode VALUES ('US','NJ', 'New Jersey' )");
-                stmt.executeUpdate("INSERT INTO CountyCode VALUES ('US','NY', 'New York' )");
-                stmt.executeUpdate("INSERT INTO CountyCode VALUES ('US','OH', 'Ohio' )");
-                stmt.executeUpdate("INSERT INTO CountyCode VALUES ('US','RI', 'Rhode Island' )");
-                stmt.executeUpdate("INSERT INTO CountyCode VALUES ('US','VT', 'Vermont' )");
-                stmt.executeUpdate("INSERT INTO CountyCode VALUES ('US','WI', 'Wisconsin' )");
-                stmt.executeUpdate("INSERT INTO CountyCode VALUES ('US','CA', 'California' )");
-                stmt.executeUpdate("INSERT INTO CountyCode VALUES ('US','CO', 'Colorado' )");
-                stmt.executeUpdate("INSERT INTO CountyCode VALUES ('US','NM', 'New Mexico' )");
-                stmt.executeUpdate("INSERT INTO CountyCode VALUES ('US','MV', 'Nevada' )");
-                stmt.executeUpdate("INSERT INTO CountyCode VALUES ('US','UT', 'Utah' )");
-                stmt.executeUpdate("INSERT INTO CountyCode VALUES ('US','AZ', 'Arizona' )");
-                stmt.executeUpdate("INSERT INTO CountyCode VALUES ('US','ID', 'Idaho' )");
-                stmt.executeUpdate("INSERT INTO CountyCode VALUES ('US','MT', 'Montana' )");
-                stmt.executeUpdate("INSERT INTO CountyCode VALUES ('US','ND', 'North Dakota' )");
-                stmt.executeUpdate("INSERT INTO CountyCode VALUES ('US','OR', 'Oregon' )");
-                stmt.executeUpdate("INSERT INTO CountyCode VALUES ('US','SD', 'South Dakota' )");
-                stmt.executeUpdate("INSERT INTO CountyCode VALUES ('US','WA', 'Washington' )");
-                stmt.executeUpdate("INSERT INTO CountyCode VALUES ('US','WY', 'Wyoming' )");
-                stmt.executeUpdate("INSERT INTO CountyCode VALUES ('US','HI', 'Hawaii' )");
-                stmt.executeUpdate("INSERT INTO CountyCode VALUES ('US','AK', 'Alaska' )");
-                stmt.executeUpdate("INSERT INTO CountyCode VALUES ('US','KY', 'Kentucky' )");
-                stmt.executeUpdate("INSERT INTO CountyCode VALUES ('US','MA', 'Massachusetts' )");
-                stmt.executeUpdate("INSERT INTO CountyCode VALUES ('US','PA', 'Pennsylvania' )");
-                stmt.executeUpdate("INSERT INTO CountyCode VALUES ('US','VA', 'Virginia' )");
-
-                model.put("records"," Database successfully initialized");
-                return "db";
-            } catch (Exception e) {
-                model.put("message", e.getMessage());
-                return "error";
-            }
-        }else {
+        if(!password.equals(DB_PASSWORD)){
             model.put("message","wrong password");
             return "error";
         }
-    }
 
+        InputStream inputStream = null;
+        ClassLoader classLoader = this.getClass().getClassLoader();
+        inputStream= classLoader.getResourceAsStream("rawData/CountyCode/CountyCode.txt");
+
+        try (Connection connection = dataSource.getConnection()) {
+            Statement stmt = connection.createStatement();
+            stmt.executeUpdate("DROP TABLE CountyCode");
+            stmt.executeUpdate("CREATE TABLE IF NOT EXISTS CountyCode (Country VARCHAR(2) ," +
+                    "Admin VARCHAR(2)," +
+                    "Name VARCHAR(40))");
+
+            PreparedStatement prepstmt = connection.prepareStatement(
+                    "INSERT INTO CountyCode VALUES (?,?,?)");
+
+            BufferedReader br = new BufferedReader(new InputStreamReader(inputStream));
+            String line = "";
+            while((line = br.readLine())!= null){
+                String[] args = line.split("\\t");
+
+                String country = args[0].substring(0,2);
+                String provinceCode = args[0].substring(3,5);
+                String provinceName = args[1];
+
+                prepstmt.setString(1,country);
+                prepstmt.setString(2,provinceCode);
+                prepstmt.setString(3,provinceName);
+
+                prepstmt.executeUpdate();
+        }
+            closeSilently(inputStream);
+            connection.close();
+            model.put("records"," Database successfully initialized");
+            return "db";
+        } catch (Exception e) {
+            model.put("message", "error: " + e.getMessage());
+            return "error";
+        }
+    }
 
     @RequestMapping(value = "/suggestions", method = RequestMethod.GET)
     public String suggestions(@RequestParam Map<String,String> requestParams, Map<String, Object>model) throws Exception{
@@ -155,10 +169,7 @@ public class Main {
         }
 
         List<Location> possibleLocation = getPossibleLocation(wordPart);
-        for(Location loc : possibleLocation){
-            setLocationScore(wordPart,latitude,longitude,loc);
-        }
-
+        SimpleScoringAlgorithm.setScore(possibleLocation, wordPart,latitude,longitude, m_DistanceUpperLimit);
        // sort possibleLocation according to the biggest score
         Collections.sort(possibleLocation, Comparator.comparing(Location::getComparaisonScore));
         Collections.reverse(possibleLocation);
@@ -166,7 +177,7 @@ public class Main {
         Gson gson = new Gson();
         JsonResponse jsonResponse = new JsonResponse();
         for( Location loc: possibleLocation){
-            if(loc.getComparaisonScore()>MINIMAL_SCORE){
+            if(loc.getComparaisonScore()>m_MinimalScore){
                jsonResponse.addLocation(loc);
             }
         }
@@ -214,7 +225,6 @@ public class Main {
                     // args[9] is an alternate country code -> not used for CA and US
                     String admin2Code = args[10];
                     // args 11 to 18 are not used for this app.
-
                     locations.add(new Location(geonameID,name, latitude, longitude, countryCode, admin2Code));
                 }
             }
@@ -222,10 +232,9 @@ public class Main {
             e.printStackTrace();
         } catch (IOException e){
             e.printStackTrace();
-        }finally{
+        } finally{
             closeSilently(inputStream);
         }
-
     }
 
     /*
@@ -256,31 +265,6 @@ public class Main {
       }
 
       return sublist;
-  }
-  /*
-  Compare part of a word with a location name.
-  Return a score between 0 and 1 ( 1 = perfect match, 0 = horrible match)
-  Then adjust that score based on the distance between locations (the further, the lower the score)
-   */
-  private void setLocationScore(String wordPart,double latitude, double longitude, Location location){
-
-      double score;
-      //get an initial score based on the distance between words
-      score = (double) wordPart.length() / (double) location.getName().length();
-
-      //modify score based on the distance using Haversine formula
-      double earthRadius = 6371; //kilometers
-      double latDistance = Math.toRadians(latitude - location.getLatitude());
-      double lonDistance = Math.toRadians(longitude - location.getLongitude());
-      double a = Math.sin(latDistance / 2) * Math.sin(latDistance / 2)
-              + Math.cos(Math.toRadians(latitude)) * Math.cos(Math.toRadians(location.getLatitude()))
-              * Math.sin(lonDistance / 2) * Math.sin(lonDistance / 2);
-      double c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-      double distance = earthRadius * c;
-
-      //normalize by distance ; a distance of 0 have an amazing score, a distance over the upper limit is rejected
-      score = score * (1.0- (distance/DISTANCE_UPPER_LIMIT));
-      location.setComparaisonScore(score);
   }
 
   /*
