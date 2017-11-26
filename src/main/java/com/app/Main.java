@@ -34,9 +34,7 @@ public class Main {
   private double m_DistanceUpperLimit = 6000; //kilometers
   private double m_MinimalScore = 0.4;
 
-
-
-    @Value("${spring.datasource.url}")
+  @Value("${spring.datasource.url}")
   private String dbUrl;
 
   @Autowired
@@ -48,68 +46,38 @@ public class Main {
     SpringApplication.run(Main.class, args);
   }
 
-    @RequestMapping("/")
-    public String index(Map<String, Object>model) {
+  @RequestMapping("/")
+  public String index(Map<String, Object>model) {
       model.put("first", "suggestion:name:latitude:longitude");
       model.put("second", "db:password" );
       model.put("third", "config:distance:minValue" );
       return "index";
-    }
+  }
 
-    @RequestMapping("/voice")
-    public String voiceActived(@RequestParam Map<String,String> requestParams, Map<String, Object>model){
+  @RequestMapping("/voice")
+  public String voiceActived(@RequestParam Map<String,String> requestParams, Map<String, Object>model){
 
-        ClassLoader classLoader = this.getClass().getClassLoader();
-        InputStream stream = classLoader.getResourceAsStream("rawData/Voice/Amos.wav");
-        Configuration configuration = new Configuration();
+        VoiceRecognitor vc = new VoiceRecognitor();
 
-        configuration.setSampleRate(8000);
-        /*
-        TODO: Bug
-        Heroku, upon loading this application on their web services, stores the libraries in a location
-        unavaible to this application explicitly.
-        Yet, the sphinx voice recognition app requires the exact filepath to various file in order to work properly.
-
-        possible fix: use classLoader.getressourceAsStream(), write the stream on a file, use that file as filepath.
-        (memory intensive).
-         */
-
-        configuration.setAcousticModelPath(classLoader.getResource("Voice/enus").getPath());
-        configuration.setDictionaryPath(classLoader.getResource("Voice/cmudict-en-us.dict").getPath());
-        configuration.setLanguageModelPath(classLoader.getResource("Voice/enus.lm.bin").getPath());
-
-        StreamSpeechRecognizer recognizer = null;
-
-        try {
-            recognizer = new StreamSpeechRecognizer(configuration);
-        } catch (IOException e) {
-            model.put("message", "some message:");
-            return "error";
-        }
-
-        recognizer.startRecognition(stream);
-        SpeechResult result  = recognizer.getResult();
-        recognizer.stopRecognition();
-
-        model.put("voice", "some message:"+  result.getHypothesis());
+        model.put("voice",  vc.getWordFromVoice("Voice/Amos.wav"));
         return "voice";
-    }
+  }
 
-    @RequestMapping(value = "/config", method = RequestMethod.GET)
-    public String setConfig(@RequestParam Map<String,String> requestParams, Map<String, Object>model){
+  @RequestMapping(value = "/config", method = RequestMethod.GET)
+  public String setConfig(@RequestParam Map<String,String> requestParams, Map<String, Object>model){
         m_DistanceUpperLimit = Double.parseDouble(requestParams.get("DistanceUpperLimit"));
         m_MinimalScore = Double.parseDouble(requestParams.get("MinimalScore"));
 
         model.put("config", "config modified");
         return "config";
-    }
+  }
 
-    /*
-    Initialize the database with the CountyCode, admin region and name of region for both CA and US.
-    Originally, the Database was also meant to contain all the location, but the current version of Heroku have a limit of 10'000 rows
-     */
-    @RequestMapping(value = "/db", method = RequestMethod.GET)
-    public String db(@RequestParam Map<String,String> requestParams, Map<String, Object>model) {
+  /*
+  Initialize the database with the CountyCode, admin region and name of region for both CA and US.
+  Originally, the Database was also meant to contain all the location, but the current version of Heroku have a limit of 10'000 rows
+  */
+  @RequestMapping(value = "/db", method = RequestMethod.GET)
+  public String db(@RequestParam Map<String,String> requestParams, Map<String, Object>model) {
         // this is to mimic a protected access; ideally this function would be on a totally different, private, dyno...
         // but Heroku free version only allow one dyno.
         String password=requestParams.get("password");
@@ -158,8 +126,8 @@ public class Main {
         }
     }
 
-    @RequestMapping(value = "/suggestions", method = RequestMethod.GET)
-    public String suggestions(@RequestParam Map<String,String> requestParams, Map<String, Object>model) throws Exception{
+  @RequestMapping(value = "/suggestions", method = RequestMethod.GET)
+  public String suggestions(@RequestParam Map<String,String> requestParams, Map<String, Object>model) throws Exception{
         String wordPart=requestParams.get("q");
         double latitude=Double.parseDouble(requestParams.get("latitude"));
         double longitude=Double.parseDouble(requestParams.get("longitude"));
@@ -191,17 +159,17 @@ public class Main {
         }
     }
 
-    /*
-    load up the raw data comming from Geodata.com, transform it into useable Location object.
-    Only have to be done once per loading
-     */
-    private void initializeLocation() {
+  /*
+  load up the raw data comming from Geodata.com, transform it into useable Location object.
+  Only have to be done once per loading
+  */
+  private void initializeLocation() {
         locations = new ArrayList<Location>();
         addLocations("rawData/Locations/CA.txt");
         addLocations("rawData/Locations/US.txt");
     }
 
-    private void addLocations(String filepath){
+  private void addLocations(String filepath){
 
         InputStream inputStream = null;
         try {
@@ -237,9 +205,9 @@ public class Main {
         }
     }
 
-    /*
-    Heroku's tutorial example of loading datasource
-    */
+  /*
+  Heroku's tutorial example of loading datasource
+  */
   @Bean
   public DataSource dataSource() throws SQLException {
     if (dbUrl == null || dbUrl.isEmpty()) {
@@ -253,7 +221,7 @@ public class Main {
 
   /*
   Create a sublist containing all location whose name contain the name requested
-   */
+  */
   private List<Location> getPossibleLocation(String wordPart){
 
       List<Location> sublist = new ArrayList();
